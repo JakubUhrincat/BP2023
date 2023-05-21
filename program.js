@@ -80,10 +80,10 @@ switch (vyberPravd) {
   case "viacstupnove":
     console.log("Viacstupňové vzorkovanie");
     await multiStageSampling();
-    break;    
+    break;
   case "spat":
     await main();
-    break;    
+    break;
   }
  }
 
@@ -124,10 +124,10 @@ switch (vyberPravd) {
     case "dobrovolnost":
       console.log("Vzorkovanie na základe dobrovoľnosti");
       voluntarySampling();
-      break;    
+      break;
     case "spat":
       await main();
-      break;    
+      break;
   }
 }
 
@@ -355,9 +355,9 @@ if (numericColumns.includes(yColumn)) {
   });
 
   const buffer = canvas.toBuffer('image/png');
-  const outputFilePath = `${outputPath}-${yColumn}.png`; 
+  const outputFilePath = `${outputPath}-${yColumn}.png`;
   await fs.promises.writeFile(outputFilePath, buffer);
-  } 
+  }
   else {
  const countMap = new Map();
  for (const record of records) {
@@ -365,15 +365,15 @@ if (numericColumns.includes(yColumn)) {
      countMap.set(value, (countMap.get(value) || 0) + 1);
  }
  const sortedEntries = [...countMap.entries()].sort((a, b) => b[1] - a[1]);
- const topFiveEntries = sortedEntries.slice(0, 10);
+ const topEntries = sortedEntries.slice(0, 10);
 
 
 
  const chartData = {
-     labels: topFiveEntries.map(entry => entry[0]),
+     labels: topEntries.map(entry => entry[0]),
      datasets: [{
          label: `${yColumn}`,
-         data: topFiveEntries.map(entry => entry[1]),
+         data: topEntries.map(entry => entry[1]),
          backgroundColor: 'rgba(0,0,0,0.7)',
          borderColor: 'rgba(0,0,0,0.7)',
          borderWidth: 1,
@@ -417,7 +417,7 @@ if (numericColumns.includes(yColumn)) {
 
 
 const buffer = canvas.toBuffer('image/png');
-const outputFilePath = `${outputPath}-${yColumn}.png`; 
+const outputFilePath = `${outputPath}-${yColumn}.png`;
 await fs.promises.writeFile(outputFilePath, buffer);
 }
 }
@@ -425,10 +425,11 @@ await fs.promises.writeFile(outputFilePath, buffer);
 
 async function simpleRandomSampling() {
   const { client, db, collection } = await loadDatabase();
-  
+
   const sampleSize = await getSampleSize(collection);
 
-  const sample = await collection.aggregate([{ $sample: { size: sampleSize } },{ $project: { _id: 0 } }]).toArray();
+  const sample = await collection.aggregate([
+    { $sample: { size: sampleSize } },{ $project: { _id: 0 } }]).toArray();
 
   await writeToCsvFile(sample, 'vzorka.csv');
   await plotCSV('./vzorka.csv','./graphs/vzorka');
@@ -440,9 +441,9 @@ async function simpleRandomSampling() {
 
 async function stratifiedRandomSampling() {
     const { client, db, collection } = await loadDatabase();
-  
+
     const sampleSize = await getSampleSize(collection);
-  
+
     const columns = await collection.findOne({}).then((doc) => Object.keys(doc));
     const userInput = await inquirer.prompt([
       {
@@ -469,10 +470,10 @@ async function stratifiedRandomSampling() {
         },
       },
     ]);
-  
-  
-  
-  
+
+
+
+
     const groupSizes = await collection.aggregate([
         {
           $bucket: {
@@ -486,7 +487,7 @@ async function stratifiedRandomSampling() {
         },
         {
           $project: {
-            price_group: {
+            category: {
               $concat: [
                 { $cond: [{$eq: ["$_id", "Unknown"]}, "$_id", "" ] },
                 { $cond: [{$ne: ["$_id", "Unknown"]}, { $toString: { $subtract: ["$_id", 100000] } }, ""] }
@@ -497,18 +498,18 @@ async function stratifiedRandomSampling() {
           }
         }
       ]).toArray();
-      
-  
-  
+
+
+
     const groupSamples = await Promise.all(groupSizes.map(async ({ platform, groupSize }) => {
       const groupSample = await collection.aggregate([{ $match: { platform } }, { $sample: { size: groupSize } },{ $project: { _id: 0 } }]).toArray();
       return groupSample;
     }));
-  
-  
+
+
     const flatSamples = groupSamples.flat();
     const sample = flatSamples.sort(() => 0.5 - Math.random()).slice(0, sampleSize);
-  
+
     await writeToCsvFile(sample, 'vzorka.csv');
     await plotCSV('./vzorka.csv','./graphs/vzorka');
     await plotCSV('./dataset.csv','./graphs/dataset');
@@ -519,13 +520,13 @@ async function stratifiedRandomSampling() {
 
 async function systematicSampling() {
     const { client, db, collection } = await loadDatabase();
-  
+
     const sampleSize = await getSampleSize(collection);
     const totalCount = await collection.countDocuments();
-  
+
     const step = Math.floor(totalCount / sampleSize);
     const start = Math.floor(Math.random() * step);
-  
+
     const sample = [];
     let i = start;
     while (sample.length < sampleSize && i < totalCount) {
@@ -533,46 +534,46 @@ async function systematicSampling() {
         sample.push(doc[0]);
       i += step;
     }
-  
+
     await writeToCsvFile(sample, 'vzorka.csv');
     await plotCSV('./vzorka.csv', './graphs/vzorka');
     await plotCSV('./dataset.csv', './graphs/dataset');
     await openHTML('./vzorka.csv');
-  
+
     client.close();
     process.exit();
 }
 
 async function clusterSampling() {
     const { client, db, collection } = await loadDatabase();
-  
-  
-    const clusterSize = 10;  
-    
+
+
+    const clusterSize = 10;
+
     const sampleSize = await getSampleSize(collection);
-  
+
     const totalCount = await collection.countDocuments();
     const clusterCount = Math.ceil(totalCount / clusterSize);
-  
-  
+
+
     const clusterIndexes = Array.from({ length: clusterCount }, (_, i) => i);
     const selectedClusterIndexes = clusterIndexes.sort(() => 0.5 - Math.random()).slice(0, sampleSize / clusterSize);
-  
+
     const sample = [];
     for (const clusterIndex of selectedClusterIndexes) {
       const docs = await collection.find().project({ _id: 0 }).skip(clusterIndex * clusterSize).limit(clusterSize).toArray();
       sample.push(...docs);
     }
-  
+
     await writeToCsvFile(sample, 'vzorka.csv');
     await plotCSV('./vzorka.csv', './graphs/vzorka');
     await plotCSV('./dataset.csv', './graphs/dataset');
     await openHTML('./vzorka.csv');
-  
+
     client.close();
-    process.exit(); 
+    process.exit();
 }
-  
+
 async function multiStageSampling() {
   const { client, db, collection } = await loadDatabase();
 
@@ -659,7 +660,7 @@ async function quotaSampling() {
   await plotCSV('./dataset.csv','./graphs/dataset');
   await openHTML('./vzorka.csv');
   process.exit();
-} 
+}
 
 async function snowballSampling() {
   const { client, db, collection } = await loadDatabase();
@@ -716,7 +717,7 @@ async function snowballSampling() {
   const sample = [startingPoint];
   const sampleIds = new Set([startingPoint[startingPointColumn]]);
   let queue = linkedDocs.filter((d) => d[startingPointColumn] !== startingPoint[startingPointColumn]);
-  
+
   while (sample.length < sampleSize && queue.length > 0) {
     const doc = queue.shift();
     const linkQueryValue = isNaN(doc[linkField]) ? doc[linkField] : parseFloat(doc[linkField]);
@@ -748,14 +749,14 @@ async function convenienceSampling() {
   const sampleSize = await getSampleSize(collection);
 
   const columns = await collection.findOne();
-  
+
   const columnNames = Object.keys(columns);
-  
+
   const columnsList = columnNames.map((columnName) => ({
     name: columnName,
     checked: false,
   }));
-  
+
     const selectedColumn = await inquirer.prompt([
       {
         type: 'list',
@@ -769,7 +770,7 @@ async function convenienceSampling() {
     const columnType = typeof columns[criteriaColumn];
 
     let criteriaValue;
-    
+
     if (columnType === 'number') {
       const response = await inquirer.prompt([
         {
@@ -864,7 +865,7 @@ async function purposiveSampling() {
         ],
       },
     ]);
-    
+
     const { value } = await inquirer.prompt([
       {
         type: 'number',
@@ -872,12 +873,12 @@ async function purposiveSampling() {
         name: 'value',
       },
     ]);
-    
+
     queries[columnName] = { [operator]: value };
   }
 
-  const query = { $and: Object.entries(queries).map(([column, criteria]) => ({ [column]: criteria })) }; 
-  
+  const query = { $and: Object.entries(queries).map(([column, criteria]) => ({ [column]: criteria })) };
+
 
   const sample = await collection.find(query).project({_id:0}).limit(sampleSize).toArray();
 
@@ -891,7 +892,7 @@ async function purposiveSampling() {
 
 async function voluntarySampling() {
   const { client, db, collection } = await loadDatabase();
-  
+
   const sampleSize = await getSampleSize(collection);
 
   const columns = await collection.findOne();
